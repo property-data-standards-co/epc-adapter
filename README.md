@@ -63,83 +63,79 @@ curl -X POST http://localhost:8081/v1/credential/lmk/219873319402019053122194154
 
 ### Example response
 
+The adapter produces a **PropertyCredential** per [PDTF Sub-spec 02 §3.2](https://property-data-standards-co.github.io/webv2/docs/specs/02-vc-data-model/). EPC data is represented under `energyEfficiency.certificate` on the Property entity — not a custom credential type (per D4: property-level VCs, not first-class entity VCs).
+
 ```json
 {
   "@context": [
     "https://www.w3.org/ns/credentials/v2",
     "https://propdata.org.uk/credentials/v2"
   ],
-  "type": ["VerifiableCredential", "EnergyPerformanceCertificate"],
-  "id": "urn:pdtf:epc:219873319402019053122194154717408",
+  "type": ["VerifiableCredential", "PropertyCredential"],
+  "id": "urn:pdtf:vc:epc-7f3a2b1c-9d4e-5f6a-8b7c-0d1e2f3a4b5c",
   "issuer": "did:key:z6Mk...",
-  "validFrom": "2024-11-20T09:45:12Z",
-  "validUntil": "2034-11-20",
+  "validFrom": "2026-04-03T08:30:00Z",
+  "validUntil": "2034-11-20T00:00:00Z",
   "credentialSubject": {
     "id": "urn:pdtf:uprn:100023336956",
-    "certificate": {
-      "lmkKey": "219873319402019053122194154717408",
-      "inspectionDate": "2024-11-15",
-      "lodgementDate": "2024-11-20"
-    },
-    "rating": {
-      "current": "D",
-      "currentScore": 64,
-      "potential": "B",
-      "potentialScore": 86
-    },
-    "property": {
-      "type": "House",
-      "builtForm": "Mid-Terrace",
-      "totalFloorArea": 145
-    },
-    "address": {
-      "line1": "10 Downing Street",
-      "line2": "Westminster",
-      "postcode": "SW1A 2AA",
-      "posttown": "London",
-      "localAuthority": "Westminster",
-      "constituency": "Cities of London and Westminster"
-    },
-    "fabric": {
-      "walls": "Sandstone or limestone, as built, no insulation (assumed)",
-      "roof": "Pitched, 250 mm loft insulation",
-      "floor": "Solid, no insulation (assumed)",
-      "windows": "Fully double glazed"
-    },
-    "heating": {
-      "description": "Boiler and radiators, mains gas",
-      "mainFuel": "mains gas"
-    },
-    "environment": {
-      "co2Current": 4.2,
-      "co2Potential": 1.8,
-      "co2PerFloorArea": 29,
-      "impactCurrent": 58,
-      "impactPotential": 82,
-      "energyConsumptionCurrent": 215,
-      "energyConsumptionPotential": 92
-    },
-    "costs": {
-      "heatingCurrent": 1240,
-      "heatingPotential": 690,
-      "hotWaterCurrent": 210,
-      "hotWaterPotential": 140,
-      "lightingCurrent": 132,
-      "lightingPotential": 58
+    "energyEfficiency": {
+      "certificate": {
+        "certificateNumber": "0000-0000-0000-0000-0000",
+        "currentEnergyRating": "D",
+        "currentEnergyEfficiency": 64,
+        "potentialEnergyRating": "B",
+        "potentialEnergyEfficiency": 86,
+        "environmentalImpactCurrent": 58,
+        "environmentalImpactPotential": 82,
+        "energyConsumptionCurrent": 215,
+        "energyConsumptionPotential": 92,
+        "co2EmissionsCurrent": 4.2,
+        "co2EmissionsPotential": 1.8,
+        "co2EmissionsPerFloorArea": 29,
+        "lodgementDate": "2024-11-20",
+        "expiryDate": "2034-11-20",
+        "inspectionDate": "2024-11-15",
+        "totalFloorArea": 145,
+        "propertyType": "House",
+        "builtForm": "Mid-Terrace",
+        "wallsDescription": "Sandstone or limestone, as built, no insulation (assumed)",
+        "roofDescription": "Pitched, 250 mm loft insulation",
+        "floorDescription": "Solid, no insulation (assumed)",
+        "windowsDescription": "Fully double glazed",
+        "mainHeatingDescription": "Boiler and radiators, mains gas",
+        "mainFuel": "mains gas",
+        "heatingCostCurrent": 1240,
+        "heatingCostPotential": 690,
+        "hotWaterCostCurrent": 210,
+        "hotWaterCostPotential": 140,
+        "lightingCostCurrent": 132,
+        "lightingCostPotential": 58
+      }
     }
   },
   "evidence": [{
     "type": "ElectronicRecord",
-    "sourceUrl": "https://epc.opendatacommunities.org/api/v1/domestic/certificate/219873319402019053122194154717408",
-    "fetchedAt": "2026-04-03T07:30:00Z",
-    "sourceHash": "a1b2c3d4..."
+    "source": "epc.opendatacommunities.org",
+    "retrievedAt": "2026-04-03T08:30:00Z",
+    "method": "API"
   }],
+  "termsOfUse": [{
+    "type": "PdtfAccessPolicy",
+    "confidentiality": "public"
+  }],
+  "credentialStatus": {
+    "id": "https://adapters.propdata.org.uk/status/epc/list-001#0",
+    "type": "BitstringStatusListEntry",
+    "statusPurpose": "revocation",
+    "statusListIndex": "0",
+    "statusListCredential": "https://adapters.propdata.org.uk/status/epc/list-001"
+  },
   "proof": {
     "type": "DataIntegrityProof",
     "cryptosuite": "eddsa-jcs-2022",
     "verificationMethod": "did:key:z6Mk...#z6Mk...",
     "proofPurpose": "assertionMethod",
-    "created": "2024-11-20T09:45:12Z",
+    "created": "2026-04-03T08:30:00Z",
     "proofValue": "z..."
   }
 }
@@ -197,7 +193,7 @@ The adapter is a **trusted proxy** in the PDTF trust model — it fetches from a
 npm test
 ```
 
-20 tests covering:
+22 tests covering:
 - EPC API client (auth, search, errors, retries)
 - Credential builder (mapping, signing, evidence, edge cases)
 - Server (endpoints, validation, error handling)

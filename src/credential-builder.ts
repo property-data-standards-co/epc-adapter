@@ -1,7 +1,8 @@
 /**
- * Transforms raw EPC data into a signed PDTF Verifiable Credential.
+ * Transforms raw EPC data into a signed PDTF PropertyCredential
+ * per Sub-spec 02: Verifiable Credentials Data Model.
  */
-import { createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { EpcRecord } from './epc-client.js';
 import { VcSigner } from '@pdtf/core';
 import type { KeyProvider, KeyCategory, KeyRecord } from '@pdtf/core';
@@ -62,101 +63,105 @@ export interface CredentialBuilderOptions {
   signingKeyHex: string;
   adapterDid?: string;
   signingKeyId?: string;
+  /** Status list base URL for credentialStatus */
+  statusListBaseUrl?: string;
 }
 
 export class EpcCredentialBuilder {
   private readonly signer: VcSigner;
   private readonly keyId: string;
   readonly adapterDid: string;
+  private readonly statusListBaseUrl: string;
+  private statusListIndex = 0;
 
   constructor(options: CredentialBuilderOptions) {
     const keyProvider = new StaticKeyProvider(options.signingKeyHex);
     this.adapterDid = options.adapterDid || keyProvider.getDid();
     this.keyId = options.signingKeyId ?? 'epc-adapter';
     this.signer = new VcSigner(keyProvider, this.keyId, this.adapterDid);
+    this.statusListBaseUrl = options.statusListBaseUrl ?? `https://adapters.propdata.org.uk/status/epc`;
   }
 
   /**
-   * Build and sign a PDTF Verifiable Credential from an EPC record.
+   * Build and sign a PDTF PropertyCredential from an EPC record.
+   * Conforms to Sub-spec 02 §3.2 and §11.1.
    */
-  async buildCredential(record: EpcRecord, rawBody: string): Promise<Record<string, unknown>> {
-    const fetchedAt = new Date().toISOString();
-    const sourceHash = createHash('sha256').update(rawBody).digest('hex');
+  async buildCredential(record: EpcRecord, _rawBody: string): Promise<Record<string, unknown>> {
     const lmkKey = record['lmk-key'];
     const uprn = record.uprn;
-    const lodgementDate = record['lodgement-datetime'] || record['lodgement-date'];
+    const retrievedAt = new Date().toISOString();
 
     // EPCs are valid for 10 years from lodgement
-    const validUntil = computeValidUntil(record['lodgement-date']);
+    const expiryDate = computeExpiryDate(record['lodgement-date']);
+    const lodgementDatetime = record['lodgement-datetime'] || record['lodgement-date'];
+
+    // Allocate a status list index (in production this comes from a proper allocator)
+    const statusIndex = String(this.statusListIndex++);
+    const statusListId = `${this.statusListBaseUrl}/list-001`;
 
     const vc = await this.signer.sign({
-      id: `urn:pdtf:epc:${lmkKey}`,
-      type: 'EnergyPerformanceCertificate',
-      validFrom: lodgementDate,
-      validUntil,
+      id: `urn:pdtf:vc:epc-${randomUUID()}`,
+      type: 'PropertyCredential',
+      validFrom: retrievedAt,
+      validUntil: `${expiryDate}T00:00:00Z`,
       credentialSubject: {
         id: `urn:pdtf:uprn:${uprn}`,
-        certificate: {
-          lmkKey,
-          inspectionDate: record['inspection-date'],
-          lodgementDate: record['lodgement-date'],
-        },
-        rating: {
-          current: record['current-energy-rating'],
-          currentScore: parseNum(record['current-energy-efficiency']),
-          potential: record['potential-energy-rating'],
-          potentialScore: parseNum(record['potential-energy-efficiency']),
-        },
-        property: {
-          type: record['property-type'],
-          builtForm: record['built-form'],
-          totalFloorArea: parseNum(record['total-floor-area']),
-        },
-        address: {
-          line1: record.address1,
-          line2: record.address2 || undefined,
-          line3: record.address3 || undefined,
-          postcode: record.postcode,
-          posttown: record.posttown,
-          localAuthority: record['local-authority'],
-          constituency: record.constituency,
-        },
-        fabric: {
-          walls: record['walls-description'],
-          roof: record['roof-description'],
-          floor: record['floor-description'],
-          windows: record['windows-description'],
-        },
-        heating: {
-          description: record['main-heating-description'],
-          mainFuel: record['main-fuel'],
-        },
-        environment: {
-          co2Current: parseNum(record['co2-emissions-current']),
-          co2Potential: parseNum(record['co2-emissions-potential']),
-          co2PerFloorArea: parseNum(record['co2-emiss-curr-per-floor-area']),
-          impactCurrent: parseNum(record['environment-impact-current']),
-          impactPotential: parseNum(record['environment-impact-potential']),
-          energyConsumptionCurrent: parseNum(record['energy-consumption-current']),
-          energyConsumptionPotential: parseNum(record['energy-consumption-potential']),
-        },
-        costs: {
-          heatingCurrent: parseNum(record['heating-cost-current']),
-          heatingPotential: parseNum(record['heating-cost-potential']),
-          hotWaterCurrent: parseNum(record['hot-water-cost-current']),
-          hotWaterPotential: parseNum(record['hot-water-cost-potential']),
-          lightingCurrent: parseNum(record['lighting-cost-current']),
-          lightingPotential: parseNum(record['lighting-cost-potential']),
+        energyEfficiency: {
+          certificate: {
+            certificateNumber: lmkKey,
+            currentEnergyRating: record['current-energy-rating'],
+            currentEnergyEfficiency: parseNum(record['current-energy-efficiency']),
+            potentialEnergyRating: record['potential-energy-rating'],
+            potentialEnergyEfficiency: parseNum(record['potential-energy-efficiency']),
+            environmentalImpactCurrent: parseNum(record['environment-impact-current']),
+            environmentalImpactPotential: parseNum(record['environment-impact-potential']),
+            energyConsumptionCurrent: parseNum(record['energy-consumption-current']),
+            energyConsumptionPotential: parseNum(record['energy-consumption-potential']),
+            co2EmissionsCurrent: parseNum(record['co2-emissions-current']),
+            co2EmissionsPotential: parseNum(record['co2-emissions-potential']),
+            co2EmissionsPerFloorArea: parseNum(record['co2-emiss-curr-per-floor-area']),
+            lodgementDate: record['lodgement-date'],
+            expiryDate,
+            inspectionDate: record['inspection-date'],
+            totalFloorArea: parseNum(record['total-floor-area']),
+            propertyType: record['property-type'],
+            builtForm: record['built-form'],
+            wallsDescription: record['walls-description'] || undefined,
+            roofDescription: record['roof-description'] || undefined,
+            floorDescription: record['floor-description'] || undefined,
+            windowsDescription: record['windows-description'] || undefined,
+            mainHeatingDescription: record['main-heating-description'] || undefined,
+            mainFuel: record['main-fuel'] || undefined,
+            heatingCostCurrent: parseNum(record['heating-cost-current']),
+            heatingCostPotential: parseNum(record['heating-cost-potential']),
+            hotWaterCostCurrent: parseNum(record['hot-water-cost-current']),
+            hotWaterCostPotential: parseNum(record['hot-water-cost-potential']),
+            lightingCostCurrent: parseNum(record['lighting-cost-current']),
+            lightingCostPotential: parseNum(record['lighting-cost-potential']),
+          },
         },
       },
       evidence: [
         {
           type: 'ElectronicRecord',
-          sourceUrl: `https://epc.opendatacommunities.org/api/v1/domestic/certificate/${lmkKey}`,
-          fetchedAt,
-          sourceHash,
+          source: 'epc.opendatacommunities.org',
+          retrievedAt,
+          method: 'API',
         },
       ],
+      termsOfUse: [
+        {
+          type: 'PdtfAccessPolicy',
+          confidentiality: 'public',
+        },
+      ],
+      credentialStatus: {
+        id: `${statusListId}#${statusIndex}`,
+        type: 'BitstringStatusListEntry',
+        statusPurpose: 'revocation',
+        statusListIndex: statusIndex,
+        statusListCredential: statusListId,
+      },
     });
 
     return vc as unknown as Record<string, unknown>;
@@ -171,7 +176,7 @@ function parseNum(val: string | undefined): number | undefined {
   return isNaN(n) ? undefined : n;
 }
 
-function computeValidUntil(lodgementDate: string): string {
+function computeExpiryDate(lodgementDate: string): string {
   const d = new Date(lodgementDate);
   d.setFullYear(d.getFullYear() + 10);
   return d.toISOString().split('T')[0];

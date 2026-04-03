@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { createHash } from 'node:crypto';
 import { EpcCredentialBuilder } from '../credential-builder.js';
 import { verifyProof } from '@pdtf/core';
 import type { EpcRecord } from '../epc-client.js';
 import mockResponse from '../../mocks/epc-response.json' with { type: 'json' };
 
-// Deterministic test key (same seed as cross-language vectors)
+// 64 hex chars = 32 bytes
 const TEST_SECRET_HEX = 'abababababababababababababababababababababababababababababababab';
 
 describe('EpcCredentialBuilder', () => {
@@ -15,108 +14,132 @@ describe('EpcCredentialBuilder', () => {
     expect(builder.adapterDid).toMatch(/^did:key:z6Mk/);
   });
 
-  it('builds a valid VC structure', async () => {
+  it('produces a PropertyCredential per spec §3.2', async () => {
     const rawBody = JSON.stringify(mockResponse);
     const vc = await builder.buildCredential(mockResponse as unknown as EpcRecord, rawBody);
 
-    // W3C VC envelope
+    // W3C VC v2 + PDTF v2 contexts
     expect((vc as any)['@context']).toContain('https://www.w3.org/ns/credentials/v2');
     expect((vc as any)['@context']).toContain('https://propdata.org.uk/credentials/v2');
-    expect((vc as any).type).toContain('VerifiableCredential');
-    expect((vc as any).type).toContain('EnergyPerformanceCertificate');
 
-    // ID and issuer
-    expect(vc.id).toBe('urn:pdtf:epc:0000-0000-0000-0000-0000');
+    // Type: PropertyCredential, not EnergyPerformanceCertificate
+    expect((vc as any).type).toContain('VerifiableCredential');
+    expect((vc as any).type).toContain('PropertyCredential');
+    expect((vc as any).type).not.toContain('EnergyPerformanceCertificate');
+
+    // Credential ID uses urn:pdtf:vc: format
+    expect(vc.id).toMatch(/^urn:pdtf:vc:epc-/);
+
+    // Issuer is the adapter DID
     expect(vc.issuer).toBe(builder.adapterDid);
 
-    // Validity
-    expect(vc.validFrom).toBe('2024-11-20T09:45:12Z');
-    expect(vc.validUntil).toBe('2034-11-20');
+    // validUntil = 10 years from lodgement
+    expect(vc.validUntil).toBe('2034-11-20T00:00:00Z');
   });
 
-  it('maps credential subject correctly', async () => {
+  it('maps energyEfficiency.certificate paths per entity schema', async () => {
     const rawBody = JSON.stringify(mockResponse);
     const vc = await builder.buildCredential(mockResponse as unknown as EpcRecord, rawBody);
     const subject = (vc as any).credentialSubject;
 
+    // Subject ID is urn:pdtf:uprn:{uprn}
     expect(subject.id).toBe('urn:pdtf:uprn:100023336956');
 
-    // Certificate info
-    expect(subject.certificate.lmkKey).toBe('0000-0000-0000-0000-0000');
-    expect(subject.certificate.inspectionDate).toBe('2024-11-15');
-    expect(subject.certificate.lodgementDate).toBe('2024-11-20');
+    // All data under energyEfficiency.certificate
+    const cert = subject.energyEfficiency.certificate;
+    expect(cert).toBeDefined();
 
     // Rating
-    expect(subject.rating.current).toBe('D');
-    expect(subject.rating.currentScore).toBe(64);
-    expect(subject.rating.potential).toBe('B');
-    expect(subject.rating.potentialScore).toBe(86);
+    expect(cert.certificateNumber).toBe('0000-0000-0000-0000-0000');
+    expect(cert.currentEnergyRating).toBe('D');
+    expect(cert.currentEnergyEfficiency).toBe(64);
+    expect(cert.potentialEnergyRating).toBe('B');
+    expect(cert.potentialEnergyEfficiency).toBe(86);
 
-    // Property
-    expect(subject.property.type).toBe('House');
-    expect(subject.property.builtForm).toBe('Mid-Terrace');
-    expect(subject.property.totalFloorArea).toBe(145);
+    // Environmental impact
+    expect(cert.environmentalImpactCurrent).toBe(58);
+    expect(cert.environmentalImpactPotential).toBe(82);
+    expect(cert.energyConsumptionCurrent).toBe(215);
+    expect(cert.energyConsumptionPotential).toBe(92);
 
-    // Address
-    expect(subject.address.line1).toBe('10 Downing Street');
-    expect(subject.address.postcode).toBe('SW1A 2AA');
-    expect(subject.address.localAuthority).toBe('Westminster');
+    // CO2
+    expect(cert.co2EmissionsCurrent).toBe(4.2);
+    expect(cert.co2EmissionsPotential).toBe(1.8);
+    expect(cert.co2EmissionsPerFloorArea).toBe(29);
+
+    // Dates
+    expect(cert.lodgementDate).toBe('2024-11-20');
+    expect(cert.expiryDate).toBe('2034-11-20');
+    expect(cert.inspectionDate).toBe('2024-11-15');
+
+    // Property details on the certificate
+    expect(cert.totalFloorArea).toBe(145);
+    expect(cert.propertyType).toBe('House');
+    expect(cert.builtForm).toBe('Mid-Terrace');
 
     // Fabric
-    expect(subject.fabric.walls).toContain('Sandstone');
-    expect(subject.fabric.roof).toContain('loft insulation');
-    expect(subject.fabric.windows).toContain('double glazed');
+    expect(cert.wallsDescription).toContain('Sandstone');
+    expect(cert.roofDescription).toContain('loft insulation');
+    expect(cert.windowsDescription).toContain('double glazed');
 
     // Heating
-    expect(subject.heating.description).toContain('Boiler');
-    expect(subject.heating.mainFuel).toBe('mains gas');
+    expect(cert.mainHeatingDescription).toContain('Boiler');
+    expect(cert.mainFuel).toBe('mains gas');
 
-    // Environment
-    expect(subject.environment.co2Current).toBe(4.2);
-    expect(subject.environment.co2Potential).toBe(1.8);
-    expect(subject.environment.co2PerFloorArea).toBe(29);
-
-    // Costs (parsed as numbers)
-    expect(subject.costs.heatingCurrent).toBe(1240);
-    expect(subject.costs.lightingPotential).toBe(58);
+    // Costs (numbers, not strings)
+    expect(cert.heatingCostCurrent).toBe(1240);
+    expect(cert.heatingCostPotential).toBe(690);
+    expect(cert.lightingCostCurrent).toBe(132);
+    expect(cert.lightingCostPotential).toBe(58);
   });
 
-  it('includes evidence with source hash', async () => {
+  it('includes spec-compliant evidence (ElectronicRecord)', async () => {
     const rawBody = JSON.stringify(mockResponse);
     const vc = await builder.buildCredential(mockResponse as unknown as EpcRecord, rawBody);
     const evidence = (vc as any).evidence;
 
     expect(evidence).toHaveLength(1);
     expect(evidence[0].type).toBe('ElectronicRecord');
-    expect(evidence[0].sourceUrl).toContain('0000-0000-0000-0000-0000');
-    expect(evidence[0].fetchedAt).toBeDefined();
+    expect(evidence[0].source).toBe('epc.opendatacommunities.org');
+    expect(evidence[0].retrievedAt).toBeDefined();
+    expect(evidence[0].method).toBe('API');
+  });
 
-    // Verify hash
-    const expectedHash = createHash('sha256').update(rawBody).digest('hex');
-    expect(evidence[0].sourceHash).toBe(expectedHash);
+  it('includes termsOfUse (public)', async () => {
+    const rawBody = JSON.stringify(mockResponse);
+    const vc = await builder.buildCredential(mockResponse as unknown as EpcRecord, rawBody);
+    const tou = (vc as any).termsOfUse;
+
+    expect(tou).toHaveLength(1);
+    expect(tou[0].type).toBe('PdtfAccessPolicy');
+    expect(tou[0].confidentiality).toBe('public');
+  });
+
+  it('includes credentialStatus (BitstringStatusListEntry)', async () => {
+    const rawBody = JSON.stringify(mockResponse);
+    const vc = await builder.buildCredential(mockResponse as unknown as EpcRecord, rawBody);
+    const status = (vc as any).credentialStatus;
+
+    expect(status.type).toBe('BitstringStatusListEntry');
+    expect(status.statusPurpose).toBe('revocation');
+    expect(status.statusListIndex).toBeDefined();
+    expect(status.statusListCredential).toContain('adapters.propdata.org.uk/status/epc');
+    expect(status.id).toContain('#');
   });
 
   it('produces a verifiable DataIntegrityProof', async () => {
     const rawBody = JSON.stringify(mockResponse);
     const vc = await builder.buildCredential(mockResponse as unknown as EpcRecord, rawBody);
 
-    // Check proof structure
     const proof = (vc as any).proof;
     expect(proof.type).toBe('DataIntegrityProof');
     expect(proof.cryptosuite).toBe('eddsa-jcs-2022');
     expect(proof.proofPurpose).toBe('assertionMethod');
     expect(proof.verificationMethod).toContain(builder.adapterDid);
 
-    // Actually verify the signature
-    // Need to get the public key from the builder's DID
-    const { resolveDidKey: resolveDid } = await import('@pdtf/core');
-    const didDoc = resolveDid(builder.adapterDid);
-    // Re-derive the public key from the secret
+    // Verify the signature
     const { ed25519 } = await import('@noble/curves/ed25519');
-    const secretBytes = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) {
-      secretBytes[i] = parseInt(TEST_SECRET_HEX.substring(i * 2, i * 2 + 2), 16);
-    }
+    const secretBytes = hexToBytes(TEST_SECRET_HEX);
     const publicKey = ed25519.getPublicKey(secretBytes);
 
     const valid = verifyProof({ document: vc as any, publicKey });
@@ -167,10 +190,18 @@ describe('EpcCredentialBuilder', () => {
     };
     const rawBody = JSON.stringify(sparse);
     const vc = await builder.buildCredential(sparse as unknown as EpcRecord, rawBody);
-    const subject = (vc as any).credentialSubject;
+    const cert = (vc as any).credentialSubject.energyEfficiency.certificate;
 
-    expect(subject.property.totalFloorArea).toBeUndefined();
-    expect(subject.environment.impactCurrent).toBeUndefined();
-    expect(subject.environment.energyConsumptionCurrent).toBeUndefined();
+    expect(cert.totalFloorArea).toBeUndefined();
+    expect(cert.environmentalImpactCurrent).toBeUndefined();
+    expect(cert.energyConsumptionCurrent).toBeUndefined();
   });
 });
+
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+}

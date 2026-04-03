@@ -1,9 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createApp, type AppDeps } from '../server.js';
 import { EpcCredentialBuilder } from '../credential-builder.js';
-import { EpcClient, EpcApiError } from '../epc-client.js';
+import { EpcClient } from '../epc-client.js';
 import mockResponse from '../../mocks/epc-response.json' with { type: 'json' };
-import type { EpcRecord } from '../epc-client.js';
 
 const TEST_SECRET_HEX = 'abababababababababababababababababababababababababababababababab';
 
@@ -55,27 +54,32 @@ describe('Server', () => {
     expect(body.assertionMethod).toBeDefined();
   });
 
-  it('POST /v1/credential/uprn/:uprn returns signed VC', async () => {
+  it('POST /v1/credential/uprn/:uprn returns PropertyCredential', async () => {
     const app = createApp(createTestDeps());
     const res = await app.request('/v1/credential/uprn/100023336956', { method: 'POST' });
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body.type).toContain('VerifiableCredential');
-    expect(body.type).toContain('EnergyPerformanceCertificate');
+    expect(body.type).toContain('PropertyCredential');
     expect(body.credentialSubject.id).toBe('urn:pdtf:uprn:100023336956');
+    expect(body.credentialSubject.energyEfficiency).toBeDefined();
+    expect(body.credentialSubject.energyEfficiency.certificate).toBeDefined();
     expect(body.proof).toBeDefined();
     expect(body.proof.type).toBe('DataIntegrityProof');
+    expect(body.evidence[0].type).toBe('ElectronicRecord');
+    expect(body.termsOfUse[0].type).toBe('PdtfAccessPolicy');
+    expect(body.credentialStatus.type).toBe('BitstringStatusListEntry');
   });
 
-  it('POST /v1/credential/lmk/:lmkKey returns signed VC', async () => {
+  it('POST /v1/credential/lmk/:lmkKey returns PropertyCredential', async () => {
     const app = createApp(createTestDeps());
     const res = await app.request('/v1/credential/lmk/0000-0000-0000-0000-0000', { method: 'POST' });
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.type).toContain('EnergyPerformanceCertificate');
-    expect(body.id).toBe('urn:pdtf:epc:0000-0000-0000-0000-0000');
+    expect(body.type).toContain('PropertyCredential');
+    expect(body.id).toMatch(/^urn:pdtf:vc:epc-/);
   });
 
   it('POST /v1/credential/uprn/:uprn returns 400 for non-numeric UPRN', async () => {
