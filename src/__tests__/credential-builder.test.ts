@@ -20,7 +20,7 @@ describe('EpcCredentialBuilder', () => {
 
     // W3C VC v2 + PDTF v2 contexts
     expect((vc as any)['@context']).toContain('https://www.w3.org/ns/credentials/v2');
-    expect((vc as any)['@context']).toContain('https://propdata.org.uk/credentials/v2');
+    expect((vc as any)['@context']).toContain('https://trust.propdata.org.uk/ns/pdtf/v2');
 
     // Type: PropertyCredential, not EnergyPerformanceCertificate
     expect((vc as any).type).toContain('VerifiableCredential');
