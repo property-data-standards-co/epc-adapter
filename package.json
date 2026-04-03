@@ -1,0 +1,31 @@
+{
+  "name": "@pdtf/epc-adapter",
+  "version": "0.1.0",
+  "description": "PDTF 2.0 EPC adapter — fetch UK EPC data and issue signed verifiable credentials",
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "vitest run"
+  },
+  "author": "Ed Molyneux / Moverly",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "@noble/curves": "^1.9.0",
+    "@pdtf/core": "file:../pdtf-core",
+    "hono": "^4.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}
