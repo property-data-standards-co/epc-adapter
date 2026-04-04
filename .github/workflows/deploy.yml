@@ -1,0 +1,58 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: pdtf-prod          # ← update after creating GCP project
+  REGION: europe-west2
+  SERVICE: epc-adapter
+  REGISTRY: europe-west2-docker.pkg.dev/pdtf-prod/services
+
+permissions:
+  contents: read
+  id-token: write                 # Required for Workload Identity Federation
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github-actions/providers/github-oidc
+          service_account: deploy-epc-adapter@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ env.SERVICE }}:${{ github.sha }} .
+          docker tag ${{ env.REGISTRY }}/${{ env.SERVICE }}:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.SERVICE }}:latest
+          docker push ${{ env.REGISTRY }}/${{ env.SERVICE }}:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ env.SERVICE }}:latest
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/${{ env.SERVICE }}:${{ github.sha }}
