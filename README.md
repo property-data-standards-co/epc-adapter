@@ -1,6 +1,12 @@
 # @pdtf/epc-adapter
 
-PDTF 2.0 EPC Adapter — fetches domestic Energy Performance Certificate data from the [UK EPC Register](https://epc.opendatacommunities.org/) and issues signed [Verifiable Credentials](https://www.w3.org/TR/vc-data-model-2.0/).
+PDTF 2.0 EPC Adapter — an **OID4VCI credential issuer** and **OpenID Federation leaf entity** that fetches domestic Energy Performance Certificate data from the [UK EPC Register](https://epc.opendatacommunities.org/) and issues signed [PropertyCredentials](https://www.w3.org/TR/vc-data-model-2.0/) via [OpenID for Verifiable Credential Issuance](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html).
+
+The adapter:
+- Fetches EPC data from the government EPC Register API
+- Issues signed PropertyCredentials via OID4VCI
+- Publishes a federation entity configuration at `/.well-known/openid-federation`
+- Holds a `property-data-provider` trust mark from the PDTF Trust Anchor
 
 ## How it works
 
@@ -178,7 +184,7 @@ docker run -p 8081:8081 --env-file .env epc-adapter
 
 ## Architecture
 
-The adapter is a **trusted proxy** in the PDTF trust model — it fetches from a primary source (the EPC Register) and wraps the data in a signed credential. It is registered in the [Trusted Issuer Registry](https://github.com/property-data-standards-co/tir) with authorised paths:
+The adapter is an **OpenID Federation leaf entity** in the PDTF trust model — it fetches from a primary source (the EPC Register) and wraps the data in a signed credential issued via OID4VCI. It is registered with the [PDTF Trust Anchor](https://registry.propdata.org.uk) and holds a `property-data-provider` trust mark for these authorised entity:path combinations:
 
 - `Property:/energyEfficiency/certificate`
 - `Property:/energyEfficiency/rating`
@@ -186,6 +192,8 @@ The adapter is a **trusted proxy** in the PDTF trust model — it fetches from a
 - `Property:/energyEfficiency/costs`
 - `Property:/energyEfficiency/fabric`
 - `Property:/energyEfficiency/heating`
+
+Trust is established through OpenID Federation: the adapter publishes its entity configuration at `/.well-known/openid-federation`, and relying parties resolve the trust chain back to the Trust Anchor at `registry.propdata.org.uk`.
 
 ## Tests
 
